@@ -1,10 +1,12 @@
 import http from 'http';
 import express from 'express';
 import jsforceAjaxProxy from 'jsforce-ajax-proxy';
+import cors from "cors";
  
-var app = express();
+const app = express();
 
-app.set('port', process.env.PORT || 3123);
+app.use(cors());
+app.set('port', process.env.PORT || 8090);
 
 // app.use(express.errorHandler());
 
@@ -14,6 +16,6 @@ app.get('/', function(req, res) {
   res.send('JSforce AJAX Proxy');
 });
 
-http.createServer(app).listen(app.get('port'), function () {
-  console.log("Express server listening on port " + app.get('port'));
-});
+app.listen(app.get('port'), () => {
+    console.log(`server running on ${app.get('port')}`)
+})
