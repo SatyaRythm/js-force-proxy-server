@@ -7,7 +7,7 @@ const app = express();
 
 // Define CORS options
 const corsOptions = {
-    origin: '*',
+    origin: 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true,
@@ -24,7 +24,7 @@ app.set('port', process.env.PORT || 8090);
 app.options('/proxy', cors(corsOptions));
 
 // JSforce AJAX Proxy route with CORS enabled
-app.all('/proxy', cors(corsOptions), jsforceAjaxProxy({ enableCORS: true }));
+app.all('/proxy', cors(corsOptions), jsforceAjaxProxy({ allowedOrigin: 'http://localhost:3000', enableCORS: true }));
 
 app.get('/', function(req, res) {
   res.send('JSforce AJAX Proxy');
