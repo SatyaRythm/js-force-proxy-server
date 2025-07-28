@@ -5,18 +5,26 @@ import cors from "cors";
  
 const app = express();
 
-app.use(cors({
+// Define CORS options
+const corsOptions = {
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true
-}));
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
 app.use(express.json());
-// app.options('*', cors());
 app.set('port', process.env.PORT || 8090);
 
-// app.use(express.errorHandler());
-app.options('/proxy', cors());
-app.get('/proxy', cors(), jsforceAjaxProxy({ enableCORS: true }));
+// Handle OPTIONS requests explicitly
+app.options('/proxy', cors(corsOptions));
+
+// JSforce AJAX Proxy route with CORS enabled
+app.all('/proxy', cors(corsOptions), jsforceAjaxProxy({ enableCORS: true }));
 
 app.get('/', function(req, res) {
   res.send('JSforce AJAX Proxy');
