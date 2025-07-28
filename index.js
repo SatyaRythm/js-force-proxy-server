@@ -15,7 +15,7 @@ app.use(express.json());
 app.set('port', process.env.PORT || 8090);
 
 // app.use(express.errorHandler());
-
+app.options('/proxy', cors());
 app.all('/proxy', jsforceAjaxProxy({ enableCORS: true }));
 
 app.get('/', function(req, res) {
