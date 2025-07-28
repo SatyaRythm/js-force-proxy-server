@@ -5,7 +5,13 @@ import cors from "cors";
  
 const app = express();
 
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true
+}));
+app.use(express.json());
+// app.options('*', cors());
 app.set('port', process.env.PORT || 8090);
 
 // app.use(express.errorHandler());
