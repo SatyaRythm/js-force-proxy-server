@@ -43,11 +43,13 @@ export default function(options) {
         return;
       }
     }
+    
     var sfEndpoint = req.headers["salesforceproxy-endpoint"];
     if (!SF_ENDPOINT_REGEXP.test(sfEndpoint)) {
       res.status(400).send("Proxying endpoint is not allowed. `salesforceproxy-endpoint` header must be a valid Salesforce domain: " + sfEndpoint);
       return;
     }
+    
     var headers = {};
     ALLOWED_HEADERS.forEach(function(header) {
       header = header.toLowerCase();
@@ -58,45 +60,98 @@ export default function(options) {
       }
     });
     
-    var params = {
-      url: sfEndpoint || "https://login.salesforce.com//services/oauth2/token",
-      method: req.method,
-      headers: headers
-    };
-    
-    // Special handling for different content types
     var contentType = headers['content-type'] || '';
+    console.log('Content-Type:', contentType);
     
-    // For SOAP requests (login)
+    // Different handling based on content type
     if (contentType.includes('text/xml') || contentType.includes('application/soap+xml')) {
-      // For SOAP/XML requests, use raw body data
-      console.log('Handling SOAP/XML request');
-      // Don't set params.json as it will stringify the body
+      // For SOAP/XML requests (login) - use streaming approach
+      console.log('Handling SOAP/XML request with streaming');
+      
+      var params = {
+        url: sfEndpoint,
+        method: req.method,
+        headers: headers
+      };
+      
+      console.log('SOAP request params:', params);
+      proxyCounter++;
+      console.log("(++req++) " + new Array(proxyCounter+1).join('*'));
+      
+      // Use pipe for streaming XML/SOAP requests
+      req.pipe(request(params))
+        .on('response', function(response) {
+          console.log('Salesforce SOAP response status:', response.statusCode);
+          proxyCounter--;
+          console.log("(--res--) " + new Array(proxyCounter+1).join('*'));
+        })
+        .on('error', function(error) {
+          console.error('Salesforce SOAP request error:', error);
+          proxyCounter--;
+          console.log("(--err--) " + new Array(proxyCounter+1).join('*'));
+        })
+        .pipe(res);
     } 
-    // For JSON requests (Apex REST)
-    else if (req.method === 'POST' && req.body && contentType.includes('application/json')) {
-      console.log('Handling JSON request');
-      params.json = req.body;
-    }
-    
-    console.log('Proxy params:', params);
-    
-    proxyCounter++;
-    console.log("(++req++) " + new Array(proxyCounter+1).join('*'));
-    console.log("method=" + params.method + ", url=" + params.url);
-    
-    // Use pipe for streaming the request and response
-    req.pipe(request(params))
-      .on('response', function(response) {
-        console.log('Salesforce response status:', response.statusCode);
+    else {
+      // For JSON requests (Apex REST) - use non-streaming approach
+      console.log('Handling JSON/REST request with non-streaming');
+      
+      var params = {
+        url: sfEndpoint,
+        method: req.method,
+        headers: headers
+      };
+      
+      // Handle request body for POST/PUT/PATCH
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        if (contentType.includes('application/json')) {
+          params.json = req.body;
+        } else {
+          params.body = req.body;
+        }
+      }
+      
+      console.log('REST request params:', params);
+      proxyCounter++;
+      console.log("(++req++) " + new Array(proxyCounter+1).join('*'));
+      
+      // Use callback approach for JSON/REST requests
+      request(params, function(error, response, body) {
+        if (error) {
+          console.error('Salesforce REST request error:', error);
+          proxyCounter--;
+          console.log("(--err--) " + new Array(proxyCounter+1).join('*'));
+          return res.status(500).json({
+            error: 'Error connecting to Salesforce',
+            details: error.message
+          });
+        }
+        
+        console.log('Salesforce REST response status:', response.statusCode);
+        
+        // Copy response headers
+        Object.keys(response.headers).forEach(function(header) {
+          res.setHeader(header, response.headers[header]);
+        });
+        
+        // Send response with appropriate status
+        res.status(response.statusCode);
+        
+        // Parse and send response body
+        if (response.headers['content-type'] && response.headers['content-type'].includes('application/json')) {
+          try {
+            const jsonBody = typeof body === 'string' ? JSON.parse(body) : body;
+            res.json(jsonBody);
+          } catch (e) {
+            res.send(body);
+          }
+        } else {
+          res.send(body);
+        }
+        
         proxyCounter--;
         console.log("(--res--) " + new Array(proxyCounter+1).join('*'));
-      })
-      .on('error', function(error) {
-        console.error('Salesforce request error:', error);
-        proxyCounter--;
-        console.log("(--err--) " + new Array(proxyCounter+1).join('*'));
-      })
-      .pipe(res);
+      });
+    }
   }
 }
