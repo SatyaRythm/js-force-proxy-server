@@ -44,99 +44,59 @@ export default function(options) {
       }
     }
     var sfEndpoint = req.headers["salesforceproxy-endpoint"];
-    if (!sfEndpoint) {
-      sfEndpoint = req.headers["salesforceproxy-endpoint".toLowerCase()];
-    }
-    
-    if (!sfEndpoint || !SF_ENDPOINT_REGEXP.test(sfEndpoint)) {
+    if (!SF_ENDPOINT_REGEXP.test(sfEndpoint)) {
       res.status(400).send("Proxying endpoint is not allowed. `salesforceproxy-endpoint` header must be a valid Salesforce domain: " + sfEndpoint);
       return;
     }
-    
-    // Copy allowed headers
     var headers = {};
     ALLOWED_HEADERS.forEach(function(header) {
-      const headerLower = header.toLowerCase();
-      // Check for headers in a case-insensitive way
-      const foundHeader = Object.keys(req.headers).find(h => h.toLowerCase() === headerLower);
-      if (foundHeader) {
-        const value = req.headers[foundHeader];
-        if (value) {
-          const name = headerLower === 'x-authorization' ? 'authorization' : headerLower;
-          headers[name] = value;
-        }
+      header = header.toLowerCase();
+      var value = req.headers[header]
+      if (value) {
+        var name = header === 'x-authorization' ? 'authorization' : header;
+        headers[name] = req.headers[header];
       }
     });
     
-    // Prepare request parameters
     var params = {
-      url: sfEndpoint,
+      url: sfEndpoint || "https://login.salesforce.com//services/oauth2/token",
       method: req.method,
       headers: headers
     };
     
-    // Handle request body for POST/PUT requests
-    if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
-      if (headers['content-type'] && headers['content-type'].includes('application/json')) {
-        params.json = req.body;
-      } else {
-        params.body = req.body;
-      }
+    // Special handling for different content types
+    var contentType = headers['content-type'] || '';
+    
+    // For SOAP requests (login)
+    if (contentType.includes('text/xml') || contentType.includes('application/soap+xml')) {
+      // For SOAP/XML requests, use raw body data
+      console.log('Handling SOAP/XML request');
+      // Don't set params.json as it will stringify the body
+    } 
+    // For JSON requests (Apex REST)
+    else if (req.method === 'POST' && req.body && contentType.includes('application/json')) {
+      console.log('Handling JSON request');
+      params.json = req.body;
     }
     
-    console.log('Forwarding request to Salesforce:', {
-      method: params.method,
-      url: params.url,
-      headers: params.headers,
-      body: req.body
-    });
+    console.log('Proxy params:', params);
     
     proxyCounter++;
     console.log("(++req++) " + new Array(proxyCounter+1).join('*'));
     console.log("method=" + params.method + ", url=" + params.url);
     
-    // Use request to proxy the request to Salesforce
-    request(params, (error, response, body) => {
-      if (error) {
+    // Use pipe for streaming the request and response
+    req.pipe(request(params))
+      .on('response', function(response) {
+        console.log('Salesforce response status:', response.statusCode);
+        proxyCounter--;
+        console.log("(--res--) " + new Array(proxyCounter+1).join('*'));
+      })
+      .on('error', function(error) {
         console.error('Salesforce request error:', error);
         proxyCounter--;
-        return res.status(500).json({
-          error: 'Error connecting to Salesforce',
-          details: error.message
-        });
-      }
-      
-      console.log('Salesforce response:', {
-        statusCode: response.statusCode,
-        headers: response.headers,
-        body: body
-      });
-      
-      // Copy response headers
-      Object.keys(response.headers).forEach(header => {
-        res.setHeader(header, response.headers[header]);
-      });
-      
-      // Send response status and body
-      res.status(response.statusCode);
-      
-      // If the response is JSON, parse it and send as JSON
-      if (response.headers['content-type'] && 
-          response.headers['content-type'].includes('application/json')) {
-        try {
-          const jsonBody = typeof body === 'string' ? JSON.parse(body) : body;
-          proxyCounter--;
-          return res.json(jsonBody);
-        } catch (e) {
-          console.error('Error parsing JSON response:', e);
-          proxyCounter--;
-          return res.send(body);
-        }
-      }
-      
-      // Otherwise send as text
-      proxyCounter--;
-      res.send(body);
-    });
+        console.log("(--err--) " + new Array(proxyCounter+1).join('*'));
+      })
+      .pipe(res);
   }
 }
