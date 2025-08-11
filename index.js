@@ -1,6 +1,6 @@
 import http from 'http';
 import express from 'express';
-import jsforceAjaxProxy from 'jsforce-ajax-proxy';
+import jsforceAjaxProxy from './proxy.js';
 import cors from "cors";
  
 const app = express();
@@ -32,7 +32,11 @@ const corsOptions = {
 
 // Apply CORS middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+
+// Body parser middleware - ensure these are before the proxy route
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 app.set('port', process.env.PORT || 8090);
 
 // Handle OPTIONS requests explicitly
@@ -42,6 +46,17 @@ app.options('/proxy', cors(corsOptions), (req, res) => {
     res.header('Access-Control-Allow-Headers', ALLOWED_HEADERS.join(','));
     res.header('Access-Control-Expose-Headers', 'SForce-Limit-Info');
     res.sendStatus(200);
+});
+
+// Debug middleware to log requests
+app.use('/proxy', (req, res, next) => {
+    console.log('Proxy Request:', {
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        url: req.url
+    });
+    next();
 });
 
 // JSforce AJAX Proxy route with CORS enabled
